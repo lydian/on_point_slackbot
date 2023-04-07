@@ -1,3 +1,10 @@
-slackclient
+aiohttp
+atlassian-python-api
 flask
-slackeventsapi
+fs.googledrivefs
+gspread
+slack-bolt
+slack-sdk
+pdpyras
+python-dotenv
+pyyaml
