@@ -1,7 +1,7 @@
 from typing import Any
 
 
-def get_key(item: Any, path: str, default_value: Any=None) -> Any:
+def get_key(item: Any, path: str, default_value: Any = None) -> Any:
     paths = path.split(".")
     v = item
     for p in paths:

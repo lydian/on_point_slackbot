@@ -8,3 +8,4 @@ slack-sdk
 pdpyras
 python-dotenv
 pyyaml
+requests
