@@ -7,5 +7,6 @@ slack-bolt
 slack-sdk
 pdpyras
 python-dotenv
+pytz
 pyyaml
 requests

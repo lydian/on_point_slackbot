@@ -74,10 +74,10 @@ class GoogleSheet:
         return self._find("Channel", channel_name, "Pagerduty Schedule")
 
     def find_oncall_log_sheet(self, channel_name: str) -> Optional[str]:
-        return self.find("Channel", channel_name, "Tracking Sheet")
+        return self._find("Channel", channel_name, "Tracking Sheet")
 
-    def update_tracking_log(self, question: str, request_url: str) -> None:
-        self._add_or_update_row(question, {"question": question, "request_url": request_url})
+    def update_tracking_log(self, query_field: str, query_value: str, request_url: str) -> None:
+        self._add_or_update_row(query_field, {query_field: query_value, "request_url": request_url})
 
     def add_or_update_pagerduty_schedule(self, channel_name: str, pagerduty_schedule: str) -> str:
         try:
