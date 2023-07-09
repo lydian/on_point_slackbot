@@ -59,6 +59,8 @@ class GoogleSheet:
     def _add_or_update_row(self, query_column: Optional[str], data: Dict[str, str]) -> None:
         values = self.update_values()
         found = self._find(query_column, data[query_column]) if query_column is not None else None
+        if query_column is not None and found is None:
+            raise ValueError(f"Unable to find `{query_column}`=`{data[query_column]}`")
         row_index = len(values) + 1 if not found else found[0]
         errors = []
         for key, value in data.items():
@@ -73,7 +75,7 @@ class GoogleSheet:
     def find_pagerduty_schedule(self, channel_name: str) -> Optional[str]:
         return self._find("Channel", channel_name, "Pagerduty Schedule")
 
-    def find_oncall_log_sheet(self, channel_name: str) -> Optional[str]:
+    def find_oncall_tracking_sheet(self, channel_name: str) -> Optional[str]:
         return self._find("Channel", channel_name, "Tracking Sheet")
 
     def update_tracking_log(self, query_field: str, query_value: str, request_url: str) -> None:
@@ -82,6 +84,13 @@ class GoogleSheet:
     def add_or_update_pagerduty_schedule(self, channel_name: str, pagerduty_schedule: str) -> str:
         try:
             self._add_or_update_row("Channel", {"Channel": channel_name, "Pagerduty Schedule": pagerduty_schedule})
+            return "Data updated"
+        except ValueError as e:
+            return e
+
+    def add_or_update_tracking_sheet(self, channel_name: str, oncall_log_sheet: str) -> str:
+        try:
+            self._add_or_update_row("Channel", {"Channel": channel_name, "Tracking Sheet": oncall_log_sheet})
             return "Data updated"
         except ValueError as e:
             return e
