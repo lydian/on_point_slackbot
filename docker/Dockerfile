@@ -6,6 +6,6 @@ RUN python -m pip install tox
 RUN tox -e venv
 COPY ./oncall_bot /oncall_bot
 
-ENTRYPOINT [ ".venv/bin/python", "-u", "-m", "oncall_bot.bot"]
+ENTRYPOINT [ ".venv/bin/python", "-u", "-m", "oncall_bot.main"]
 
 USER nobody

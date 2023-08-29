@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Callable, List, Optional
 
 
 def get_key(item: Any, path: str, default_value: Any = None) -> Any:
@@ -14,3 +14,15 @@ def get_key(item: Any, path: str, default_value: Any = None) -> Any:
         if v is None:
             return default_value
     return v
+
+
+def MinMaxValidator(min: Optional[int] = None, max: Optional[int] = None) -> Callable[[List[str]], Optional[str]]:
+
+    def validator(values: List[str]) -> Optional[str]:
+        if min is not None and len(values) < min:
+            return f"The argument is too short, expected at least {min} got {len(values)}"
+        if max is not None and len(values) > max:
+            return f"The argument is too long, expected at most {max} got {len(values)}"
+        return None
+
+    return validator
