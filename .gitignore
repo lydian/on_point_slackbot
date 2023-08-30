@@ -1,4 +1,4 @@
 .venv/
 .tox/
-.env
+.env.yaml
 **/**.pyc

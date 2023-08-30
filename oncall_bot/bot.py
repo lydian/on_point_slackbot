@@ -87,12 +87,20 @@ class SlackTool():
         return parse_channel_str
 
     @property
-    def get_channel_title(self):
-        def get_channel_title(channel_id):
+    def get_channel_topic(self):
+        def get_channel_topic(channel_id):
             return self.app.client.conversations_info(
                 channel=channel_id
-            )["channel"]["name"]
-        return get_channel_title
+            )["channel"]["topic"]["value"]
+        return get_channel_topic
+
+    @property
+    def get_channel_bookmark(self):
+        def get_channel_bookmark(channel_id):
+            return self.app.client.conversations_info(
+                channel=channel_id
+            )["channel"]["topic"]["value"]
+        return get_channel_bookmark
 
 
 class _MentionedBot():
@@ -282,22 +290,40 @@ def help(context: Context, slack_tool: SlackTool):
 
 def ping_oncall_person_for_channel(channel, slack_tool: SlackTool):
     pagerduty_schedule_id = GoogleSheet.from_oncall_settings().find_pagerduty_schedule(channel)
+    # # find pagerduty url from topic
+    if pagerduty_schedule_id is None:
+        print("no schedule set in google sheet, try to find from topic")
+        topic = slack_tool.get_channel_topic(channel)
+        pagerduty_url = re.search(r"https://.*pagerduty.com/schedules#(?P<pagerduty_id>.*)", topic)
+        if pagerduty_url:
+            pagerduty_schedule_id = pagerduty_url.group("pagerduty_id")
     print(f"pagerduty schedule id: {pagerduty_schedule_id}")
     oncall_users = (
         PagerDuty(load_config().pagerduty_token).get_oncall(pagerduty_schedule_id)
         if pagerduty_schedule_id else []
     )
+
     print(f"pagerduty oncall users: {oncall_users}")
-    if not pagerduty_schedule_id:
-        text = "Sorry, the channel doesn't have pagerduty id configured."
-    elif len(oncall_users) > 0:
+    oncall_pings = None
+    if len(oncall_users) > 0:
         oncall_user_ids = list(filter(
             lambda x: x is not None,
             [get_key(slack_tool.lookup_user(user["email"]), "user.id") for user in oncall_users]
         ))
         print(f"oncall_user_ids: {list(oncall_user_ids)}")
         oncall_pings = " ".join(f"<@{user_id}>" for user_id in oncall_user_ids)
+
+    if oncall_pings is None:
+        # find oncall user from topic
+        topic = slack_tool.get_channel_topic(channel)
+        found_oncall_user_from_topic = re.search(r":pagerduty: <@(?P<oncall_user>.*)>", topic)
+        if found_oncall_user_from_topic:
+            oncall_pings = f"<@{found_oncall_user_from_topic.group('oncall_user')}>"
+
+    if oncall_pings:
         text = f"{oncall_pings} please take a look on the request."
+    elif not pagerduty_schedule_id:
+        text = "Sorry, the channel doesn't have pagerduty id configured."
     else:
         text = "There are no oncall right now. Please ping on the time there's oncall. Thanks"
     slack_tool.responser(text)
@@ -332,4 +358,12 @@ def default_ping(context: Context, slack_tool: SlackTool):
 )
 def test(context: Context, slack_tool: SlackTool):
     channel = slack_tool.parse_channel_str(context.command_args[0].strip())["id"]
-    slack_tool.responser(slack_tool.get_channel_title(channel))
+    topic = slack_tool.get_channel_topic(channel)
+    print(topic)
+    # find pagerduty url from topic
+    pagerduty_id = re.search(r"https://.*pagerduty.com/schedules#(?P<pagerduty_id>.*)", topic)
+    print("PAGERDUTY USER:")
+    print(
+        PagerDuty(load_config().pagerduty_token).get_oncall(pagerduty_id.group("pagerduty_id"))
+        if pagerduty_id else []
+    )
