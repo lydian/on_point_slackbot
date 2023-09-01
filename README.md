@@ -1,5 +1,5 @@
 # Oncall Bot
-Hi, I'm oncall bot, I can help you manage oncall operations. Here are all the available commands that you can trigger via: `@oncall-bot <COMMAND> [ARGS]`:
+Hi, I'm oncall bot, I can help you to manage oncall schedule. Here are all the available commands:
  - `help`: show help message
  - `set-pagerduty <pagerduty_id>`: configure pagerduty for this channel
  - `get-pagerduty [channel_name]`: query pagerduty for the specified channel if provided, otherwise query for the current channel
@@ -9,4 +9,5 @@ Hi, I'm oncall bot, I can help you manage oncall operations. Here are all the av
  - `mark-complete`: mark the main thread as complete
  - `unmark-complete`: unmark the main thread as complete
  - `ping <channel_name>`: ping oncall person for the specified channel
- - if none of the command matched, I will ping the oncall person for the current channel
+ - `join <channel_name>`: join the specified channel
+ - ``: if none of the command matched, we will ping the oncall person for the current channel

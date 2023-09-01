@@ -154,6 +154,15 @@ MentionedBot = _MentionedBot()
 
 
 @MentionedBot.add_command(
+    "help",
+    format="help",
+    help_text="show help message"
+)
+def help(context: Context, slack_tool: SlackTool):
+    slack_tool.responser(str(MentionedBot), markdown=True)
+
+
+@MentionedBot.add_command(
     "set-pagerduty",
     format="set-pagerduty <pagerduty_id>",
     help_text="configure pagerduty for this channel",
@@ -279,15 +288,6 @@ def unmark_complete(context: Context, slack_tool: SlackTool):
     slack_tool.reaction_remover(conversation["ts"], "white_check_mark")
 
 
-@MentionedBot.add_command(
-    "help",
-    format="help",
-    help_text="show help message"
-)
-def help(context: Context, slack_tool: SlackTool):
-    slack_tool.responser(str(MentionedBot), markdown=True)
-
-
 def ping_oncall_person_for_channel(channel, slack_tool: SlackTool):
     pagerduty_schedule_id = GoogleSheet.from_oncall_settings().find_pagerduty_schedule(channel)
     # # find pagerduty url from topic
@@ -341,6 +341,17 @@ def ping_oncall(context: Context, slack_tool: SlackTool):
 
 
 @MentionedBot.add_command(
+    "join",
+    format="join <channel_name>",
+    help_text="join the specified channel",
+)
+def join_channel(context: Context, slack_tool: SlackTool):
+    channel = slack_tool.parse_channel_str(context.command_args[0].strip())["id"]
+    slack_tool.join_channel(channel)
+    slack_tool.responser("joined channel")
+
+
+@MentionedBot.add_command(
     "__DEFAULT__",
     format="",
     help_text="if none of the command matched, we will ping the oncall person for the current channel"
@@ -348,22 +359,3 @@ def ping_oncall(context: Context, slack_tool: SlackTool):
 def default_ping(context: Context, slack_tool: SlackTool):
     print(f"ping channel: {context.channel}")
     ping_oncall_person_for_channel(context.channel, slack_tool)
-
-
-@MentionedBot.add_command(
-    "test",
-    format="test",
-    help_text="mark the main thread as complete",
-    release=False
-)
-def test(context: Context, slack_tool: SlackTool):
-    channel = slack_tool.parse_channel_str(context.command_args[0].strip())["id"]
-    topic = slack_tool.get_channel_topic(channel)
-    print(topic)
-    # find pagerduty url from topic
-    pagerduty_id = re.search(r"https://.*pagerduty.com/schedules#(?P<pagerduty_id>.*)", topic)
-    print("PAGERDUTY USER:")
-    print(
-        PagerDuty(load_config().pagerduty_token).get_oncall(pagerduty_id.group("pagerduty_id"))
-        if pagerduty_id else []
-    )
