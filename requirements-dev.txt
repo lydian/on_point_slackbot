@@ -1,12 +1,17 @@
 aiohttp
 atlassian-python-api
+dateparser
 flask
 fs.googledrivefs
 gspread
+ipython
+shillelagh[gsheetsapi]>=1.2.0
 slack-bolt
 slack-sdk
+sqlalchemy>=2.0
 pdpyras
 python-dotenv
 pytz
 pyyaml
 requests
+pytest

@@ -2,105 +2,16 @@ import re
 from collections import namedtuple
 from typing import Any, Callable, Dict, List, Optional
 
-from slack_bolt import App
+import dateparser
 
 from oncall_bot.config import load_config
-from oncall_bot.google_sheet import GoogleSheet
+from oncall_bot.gsheet import get_gsheet_storage
 from oncall_bot.pagerduty import PagerDuty
+from oncall_bot.slack_app import Context, SlackTool
+from oncall_bot.tables import OncallInfo, get_tracking_table
 from oncall_bot.utils import MinMaxValidator, get_key
 
 Command = namedtuple("Command", ["func", "format", "help_text", "validator", "release"])
-Context = namedtuple("Context", ["channel", "message_ts", "command_args", "thread_ts"])
-
-
-class SlackTool():
-
-    def __init__(self, app: App, context: Context) -> None:
-        self.context = context
-        self.app = app
-
-    @property
-    def responser(self):
-        def responser(text, markdown=False):
-            self.app.client.chat_postMessage(
-                channel=self.context.channel,
-                thread_ts=self.context.message_ts,
-                text=text,
-                markdown=markdown,
-            )
-        return responser
-
-    @property
-    def reaction_adder(self):
-        def reaction_adder(ts, reaction_name):
-            self.app.client.reactions_add(
-                channel=self.context.channel,
-                timestamp=ts,
-                name=reaction_name,
-            )
-        return reaction_adder
-
-    @property
-    def reaction_remover(self):
-        def reaction_remover(ts, reaction_name):
-            self.app.client.reactions_remove(
-                channel=self.context.channel,
-                timestamp=ts,
-                name=reaction_name,
-            )
-        return reaction_remover
-
-    @property
-    def get_thread_first_message(self):
-        def get_thread_first_message(ts):
-            return self.app.client.conversations_history(
-                channel=self.context.channel,
-                latest=ts,
-                limit=1,
-                inclusive=True
-            )["messages"].pop()
-        return get_thread_first_message
-
-    @property
-    def get_permalink(self):
-        def get_permalink(ts):
-            return self.app.client.chat_getPermalink(
-                channel=self.context.channel,
-                message_ts=ts,
-            )["permalink"]
-        return get_permalink
-
-    @property
-    def lookup_user(self):
-        def lookup_user(email):
-            return self.app.client.users_lookupByEmail(email=email)
-        return lookup_user
-
-    @property
-    def parse_channel_str(self):
-        def parse_channel_str(channel_str):
-            match = re.match(r"<#(?P<channel_id>.*)\|(?P<channel_name>.*)>", channel_str)
-            if match:
-                return {"id": match.group("channel_id"), "name": match.group("channel_name")}
-            else:
-                return {"id": channel_str, "name": ""}
-        return parse_channel_str
-
-    @property
-    def get_channel_topic(self):
-        def get_channel_topic(channel_id):
-            return self.app.client.conversations_info(
-                channel=channel_id
-            )["channel"]["topic"]["value"]
-        return get_channel_topic
-
-    @property
-    def get_channel_bookmark(self):
-        def get_channel_bookmark(channel_id):
-            return self.app.client.conversations_info(
-                channel=channel_id
-            )["channel"]["topic"]["value"]
-        return get_channel_bookmark
 
 
 class _MentionedBot():
@@ -164,13 +75,15 @@ def help(context: Context, slack_tool: SlackTool):
 
 @MentionedBot.add_command(
     "set-pagerduty",
-    format="set-pagerduty <pagerduty_id>",
+    format="set-pagerduty <pagerduty_url>",
     help_text="configure pagerduty for this channel",
     validator=MinMaxValidator(1, 1)
 )
 def set_pagerduty(context: Context, slack_tool: SlackTool):
-    pagerduty_schedule_id = context.command_args[0].strip()
-    GoogleSheet.from_oncall_settings().add_or_update_pagerduty_schedule(context.channel, pagerduty_schedule_id)
+    pagerduty_url = context.command_args[0].strip()
+    get_gsheet_storage().upsert_table(OncallInfo, context.channel, {
+        OncallInfo.c.pagerduty_url.name: pagerduty_url
+    })
     slack_tool.responser(
         text=(
             "Configure done, you can use `set-pagerduty` to update or "
@@ -192,12 +105,15 @@ def get_pagerduty(context: Context, slack_tool: SlackTool):
         if len(context.command_args) == 0
         else slack_tool.parse_channel_str(context.command_args[0])["id"]
     )
-    print(query_channel)
-    pagerduty_schedule_id = GoogleSheet.from_oncall_settings().find_pagerduty_schedule(query_channel)
+    oncall_info = (
+        get_gsheet_storage()
+        .query_table(OncallInfo, query_channel, [OncallInfo.c.pagerduty_url])
+    )
+    pagerduty_url = oncall_info[OncallInfo.c.pagerduty_url.name] if oncall_info else None
     slack_tool.responser(
         text=(
-            f"The pagerduty for this channel is `{pagerduty_schedule_id}`"
-            if pagerduty_schedule_id else "No Settings Found. Please use `set-pagerduty PAGERDUTY_ID` to configure"
+            f"The pagerduty for this channel is `{pagerduty_url}`"
+            if pagerduty_url else "No Settings Found. Please use `set-pagerduty PAGERDUTY_ID` to configure"
         ),
         markdown=True
     )
@@ -210,8 +126,13 @@ def get_pagerduty(context: Context, slack_tool: SlackTool):
     validator=MinMaxValidator(1, 1)
 )
 def set_sheet_url(context: Context, slack_tool: SlackTool):
-    logging_url = context.command_args[0].strip()
-    GoogleSheet.from_oncall_settings().add_or_update_tracking_sheet(context.channel, logging_url)
+    logging_url = context.command_args[0].strip("<> ")
+    print(f"logging url: {logging_url}")
+    get_gsheet_storage().upsert_table(
+        OncallInfo,
+        context.channel,
+        {OncallInfo.c.tracking_sheet.name: logging_url}
+    )
     slack_tool.responser(
         text=(
             "Configure done, you can use `set-sheet-url` to update or "
@@ -233,7 +154,13 @@ def get_sheet_url(context: Context, slack_tool: SlackTool):
         if len(context.command_args) == 0
         else slack_tool.parse_channel_str(context.command_args[0])["id"]
     )
-    logging_url = GoogleSheet.from_oncall_settings().find_oncall_tracking_sheet(query_channel)
+    logging_url = get_gsheet_storage().query_table(
+        OncallInfo,
+        query_channel,
+        [OncallInfo.c.tracking_sheet]
+    )
+    if logging_url:
+        logging_url = logging_url[OncallInfo.c.tracking_sheet.name]
     slack_tool.responser(
         text=(
             f"The logging google sheet url for this channel is `{logging_url}`"
@@ -241,31 +168,6 @@ def get_sheet_url(context: Context, slack_tool: SlackTool):
         ),
         markdown=True
     )
-
-
-@MentionedBot.add_command(
-    "log-url-to-google-sheet",
-    format="log-url-to-google-sheet <start_time>",
-    help_text="log the start time to the google sheet",
-    validator=MinMaxValidator(min=1)
-)
-def log_url_to_google_sheet(context: Context, slack_tool: SlackTool):
-    # get the first message
-    query_value = " ".join(context.command_args)
-    conversation = slack_tool.get_thread_first_message(context.thread_ts)
-    main_thread_url = slack_tool.get_permalink(conversation["ts"])
-    logging_url = GoogleSheet.from_oncall_settings().find_oncall_tracking_sheet(context.channel)
-    if logging_url:
-        try:
-            GoogleSheet.from_url(logging_url).update_tracking_log("start time", query_value, main_thread_url)
-            slack_tool.reaction_adder(context.message_ts, "white_check_mark")
-        except ValueError as e:
-            slack_tool.responser(
-                text=str(e),
-                markdown=True
-            )
-    else:
-        slack_tool.responser("No tracking sheet found")
 
 
 @MentionedBot.add_command(
@@ -289,23 +191,40 @@ def unmark_complete(context: Context, slack_tool: SlackTool):
 
 
 def ping_oncall_person_for_channel(channel, slack_tool: SlackTool):
-    pagerduty_schedule_id = GoogleSheet.from_oncall_settings().find_pagerduty_schedule(channel)
+    pagerduty_urls = []
+
+    # see if we have configured that
+    row = get_gsheet_storage().query_table(OncallInfo, channel, [OncallInfo.c.pagerduty_url])
+    if row:
+        pagerduty_urls = [row[OncallInfo.c.pagerduty_url.name]]
+
     # # find pagerduty url from topic
-    if pagerduty_schedule_id is None:
+    if len(pagerduty_urls) == 0:
         print("no schedule set in google sheet, try to find from topic")
         topic = slack_tool.get_channel_topic(channel)
-        pagerduty_url = re.search(r"https://.*pagerduty.com/schedules#(?P<pagerduty_id>.*)", topic)
-        if pagerduty_url:
-            pagerduty_schedule_id = pagerduty_url.group("pagerduty_id")
-    print(f"pagerduty schedule id: {pagerduty_schedule_id}")
-    oncall_users = (
-        PagerDuty(load_config().pagerduty_token).get_oncall(pagerduty_schedule_id)
-        if pagerduty_schedule_id else []
-    )
+        has_pagerduty_url = re.search(r"(?P<url>https://.*pagerduty.com/.*)", topic)
+        if has_pagerduty_url:
+            pagerduty_url = [has_pagerduty_url.group("url")]
+
+    # find from bookmarks
+    if len(pagerduty_urls) == 0:
+        pagerduty_urls = [
+           bookmark.get("link", "") for bookmark in slack_tool.get_bookmarks(channel)
+           if "pagerduty_url" in bookmark.get("link", "")
+        ]
+
+    print(f"pagerduty urls: {pagerduty_urls}")
+    pd = PagerDuty(load_config().pagerduty_token)
+    oncall_users = [
+        oncall
+        for pagerduty_url in pagerduty_urls
+        for oncall in pd.get_oncall(pagerduty_url)
+    ]
 
     print(f"pagerduty oncall users: {oncall_users}")
     oncall_pings = None
     if len(oncall_users) > 0:
+        print(oncall_users)
         oncall_user_ids = list(filter(
             lambda x: x is not None,
             [get_key(slack_tool.lookup_user(user["email"]), "user.id") for user in oncall_users]
@@ -322,7 +241,7 @@ def ping_oncall_person_for_channel(channel, slack_tool: SlackTool):
 
     if oncall_pings:
         text = f"{oncall_pings} please take a look on the request."
-    elif not pagerduty_schedule_id:
+    elif len(pagerduty_urls) == 0:
         text = "Sorry, the channel doesn't have pagerduty id configured."
     else:
         text = "There are no oncall right now. Please ping on the time there's oncall. Thanks"
@@ -350,6 +269,61 @@ def join_channel(context: Context, slack_tool: SlackTool):
     slack_tool.join_channel(channel)
     slack_tool.responser("joined channel")
 
+@MentionedBot.add_command(
+    "summary",
+    format="summary <channel_name> <start_time> <end_time>",
+    help_text="get the summary of the oncall for the specified channel",
+    validator=MinMaxValidator(2, 3)
+)
+def summary(context: Context, slack_tool: SlackTool):
+    print(f"command args: {context.command_args}")
+    channel = (
+        slack_tool.parse_channel_str(context.command_args[0].strip())["id"]
+        if len(context.command_args) == 3 else context.channel
+    )
+    start_time = dateparser.parse(context.command_args[1] if len(context.command_args) == 3 else context.command_args[0])
+    end_time = dateparser.parse(context.command_args[2] if len(context.command_args) == 3 else context.command_args[1])
+    print(f"channel: {channel}, start_time: {start_time}, end_time: {end_time}")
+    oncall_info = get_gsheet_storage().query_table(
+        OncallInfo,
+        channel,
+        [OncallInfo.c.pagerduty_url, OncallInfo.c.tracking_sheet]
+    )
+    print(f"oncall info: {oncall_info}")
+    summary_text = []
+    if oncall_info:
+        pagerduty_url = oncall_info[OncallInfo.c.pagerduty_url.name]
+        summary = PagerDuty(load_config().pagerduty_token).get_summary_from_schedule(pagerduty_url, start_time, end_time)
+        if summary:
+            summary_text.append(f"*### Pagerduty Summary ###*")
+            summary_text.append(f"Total Pages: {summary['total_pages']}")
+            summary_text.append(f"Weekend Pages: {summary['weekend_pages']}")
+            summary_text.append(f"Out of Business Hour Pages: {summary['out_of_hours_pages']}")
+            summary_text.append("")
+            summary_text.append("*#### Pages Count ####*:")
+            for title, count in summary["group_by_titles"]:
+                summary_text.append(f"{title}: {count}")
+            summary_text.append("")
+
+    if (oncall_info or {}).get("tracking_sheet"):
+        tracking_url = oncall_info["tracking_sheet"]
+        summary = get_gsheet_storage().get_summary(tracking_url, start_time, end_time)
+        if summary:
+            summary_text.append(f"*### Request Summary ###*")
+            summary_text.append(f"Total Requests: {summary['total_requests']}")
+            summary_text.append(f"Total PR Requests: {summary['total_PR_reuqests']}")
+            summary_text.append(f"Total Support Requests: {summary['total_support_reuqests']}")
+            summary_text.append(f"Unresolved Requests: {len(summary['unresolved_requests'])}")
+            summary_text.append("")
+            summary_text.append("*#### Unresolved Requests ####*:")
+            for request in summary["unresolved_requests"]:
+                summary_text.append(f"<{request['slack_url']}|{request['subject']}> (from {request['requested_team']})")
+
+    print(f"summary text: {summary_text}")
+    if summary_text:
+        slack_tool.responser('\n'.join(summary_text), markdown=True, reply_broadcast=True)
+
+
 
 @MentionedBot.add_command(
     "__DEFAULT__",
@@ -359,3 +333,9 @@ def join_channel(context: Context, slack_tool: SlackTool):
 def default_ping(context: Context, slack_tool: SlackTool):
     print(f"ping channel: {context.channel}")
     ping_oncall_person_for_channel(context.channel, slack_tool)
+
+
+
+@MentionedBot.add_command("test", format="test", help_text="test command")
+def test(context: Context, slack_tool: SlackTool):
+    pass

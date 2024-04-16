@@ -18,8 +18,9 @@ class Config(object):
     slack_socket_app_token: Optional[str] = field(default_factory=from_env("SLACK_SOCKET_APP_TOKEN"))
     pagerduty_token: str = field(default_factory=from_env("PAGERDUTY_TOKEN"))
     google_sheet_service_account: Dict[str, str] = field(default_factory=from_env("GOOGLE_SHEET_SERVICE_ACCOUNT"))
+    google_sheet_root_db: str = field(default_factory=from_env("GOOGLE_SHEET_ROOT_DB"))
     google_sheet_root_id: str = field(default_factory=from_env("GOOGLE_SHEET_ROOT_ID"))
-
+    jira_api_token: str = field(default_factory=from_env("JIRA_API_TOKEN"))
 
 @lru_cache(1)
 def load_config() -> Config:

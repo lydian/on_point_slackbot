@@ -1,4 +1,4 @@
-FROM python:3.10
+FROM python:3.11
 
 COPY tox.ini requirements-dev.txt  /
 RUN python -m pip install tox
