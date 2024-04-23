@@ -5,6 +5,7 @@ flask
 fs.googledrivefs
 gspread
 ipython
+jira
 shillelagh[gsheetsapi]>=1.2.0
 slack-bolt
 slack-sdk

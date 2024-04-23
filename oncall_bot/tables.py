@@ -9,6 +9,9 @@ OncallInfo = Table(
     Column("pagerduty_url", String()),
     Column("channel_name", String()),
     Column("tracking_sheet", String()),
+    Column("jira_project", String()),
+    Column("jira_issue_type", String()),
+    Column("jira_metadata", JSON()),
 )
 
 

@@ -1,3 +1,4 @@
+import json
 import os
 from dataclasses import dataclass, field
 from functools import lru_cache, partial
@@ -20,7 +21,7 @@ class Config(object):
     google_sheet_service_account: Dict[str, str] = field(default_factory=from_env("GOOGLE_SHEET_SERVICE_ACCOUNT"))
     google_sheet_root_db: str = field(default_factory=from_env("GOOGLE_SHEET_ROOT_DB"))
     google_sheet_root_id: str = field(default_factory=from_env("GOOGLE_SHEET_ROOT_ID"))
-    jira_api_token: str = field(default_factory=from_env("JIRA_API_TOKEN"))
+    jira: Dict[str, str] = field(default_factory=from_env("JIRA"))
 
 @lru_cache(1)
 def load_config() -> Config:

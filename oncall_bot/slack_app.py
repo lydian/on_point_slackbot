@@ -8,7 +8,7 @@ from oncall_bot.config import load_config
 
 _app = None
 
-Context = namedtuple("Context", ["channel", "message_ts", "command_args", "thread_ts"])
+Context = namedtuple("Context", ["channel", "message_ts", "command_args", "thread_ts", "user"])
 
 
 def get_app() -> App:
@@ -123,3 +123,12 @@ class SlackTool():
                 print(e)
                 return []
         return get_bookmarks
+
+    @property
+    def get_user_info(self):
+        def get_user_info(user_id):
+            print("get_user_info", user_id)
+            return self.app.client.users_info(
+                user=user_id
+            ).data["user"]
+        return get_user_info

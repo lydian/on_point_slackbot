@@ -1,4 +1,6 @@
 import re
+import shlex
+import traceback
 from collections import namedtuple
 from typing import Any, Callable, Dict, List, Optional
 
@@ -6,6 +8,7 @@ import dateparser
 
 from oncall_bot.config import load_config
 from oncall_bot.gsheet import get_gsheet_storage
+from oncall_bot.jira import get_jira_client
 from oncall_bot.pagerduty import PagerDuty
 from oncall_bot.slack_app import Context, SlackTool
 from oncall_bot.tables import OncallInfo, get_tracking_table
@@ -34,13 +37,18 @@ class _MentionedBot():
 
     @classmethod
     def process_command(self, id, app, body: Dict[Any, Any]):
-        command_args = get_key(body, "event.text").replace(f"<@{id}>", "").strip().split(" ")
+        command_str = get_key(body, "event.text").replace(f"<@{id}>", "").strip()
+        # replace smart quotes
+        command_str = command_str.replace('“', '"').replace('”', '"').replace('‘', "'").replace('’', "'")
+        command_args = shlex.split(command_str)
+        print(f"command args: {command_args}")
         main_command = command_args.pop(0).lower().strip()
         context = Context(
             channel=get_key(body, "event.channel"),
             message_ts=get_key(body, "event.ts"),
             command_args=command_args,
             thread_ts=get_key(body, "event.thread_ts"),
+            user=get_key(body, "event.user"),
         )
         slack_tool = SlackTool(app, context)
 
@@ -48,7 +56,12 @@ class _MentionedBot():
         if cmd.validator is not None and cmd.validator(command_args) is not None:
             slack_tool.responser(cmd.validator(command_args))
             return
-        cmd.func(context, slack_tool)
+        try:
+            cmd.func(context, slack_tool)
+        except Exception as e:
+            # print traceback
+            traceback.print_exc()
+            slack_tool.responser(f"Error: {str(e)}")
 
     def __repr__(self) -> str:
         return (
@@ -323,6 +336,120 @@ def summary(context: Context, slack_tool: SlackTool):
     if summary_text:
         slack_tool.responser('\n'.join(summary_text), markdown=True, reply_broadcast=True)
 
+
+@MentionedBot.add_command(
+    "set-jira-project",
+    format="set-jira-project [channel] <project> <issue_type> <metadata>",
+    help_text="configure jira project for this channel",
+    validator=MinMaxValidator(3, 4)
+)
+def set_jira_project(context: Context, slack_tool: SlackTool):
+    channel = (
+        context.channel
+        if len(context.command_args) == 3
+        else slack_tool.parse_channel_str(context.command_args.pop(0))["id"]
+    )
+
+    project, issue_type, metadata = context.command_args
+    get_gsheet_storage().upsert_table(
+        OncallInfo,
+        channel,
+        {
+            OncallInfo.c.jira_project.name: project,
+            OncallInfo.c.jira_issue_type.name: issue_type,
+            OncallInfo.c.jira_metadata.name: metadata
+        }
+    )
+    slack_tool.responser(
+        text=(
+            "Configure done, you can use `set-jira-project` to update or "
+            "use `get-jira-project` to query the current settings"
+        ),
+        markdown=True,
+    )
+
+
+@MentionedBot.add_command(
+    "get-jira-project",
+    format="get-jira-project [channel_name]",
+    help_text="query jira project for the specified channel if provided, otherwise query for the current channel",
+    validator=MinMaxValidator(0, 1)
+)
+def get_jira_project(context: Context, slack_tool: SlackTool):
+    query_channel = (
+        context.channel
+        if len(context.command_args) == 0
+        else slack_tool.parse_channel_str(context.command_args[0])["id"]
+    )
+    jira_project = get_gsheet_storage().query_table(
+        OncallInfo,
+        query_channel,
+        [
+            OncallInfo.c.jira_project,
+            OncallInfo.c.jira_issue_type,
+            OncallInfo.c.jira_metadata
+        ]
+    )
+    if jira_project:
+        jira_project = (
+            jira_project[OncallInfo.c.jira_project.name],
+            jira_project[OncallInfo.c.jira_issue_type.name],
+            jira_project[OncallInfo.c.jira_metadata.name]
+        )
+    slack_tool.responser(
+        text=(
+            f"The jira project for this channel is `{jira_project}`"
+            if jira_project else "No Settings Found. Please use `set-jira-project` to configure"
+        ),
+        markdown=True
+    )
+
+
+@MentionedBot.add_command(
+    "create-ticket",
+    format="create-ticket <summary> <description>",
+    help_text="create a ticket in jira using the first message in thread as description",
+)
+def create_ticket(context: Context, slack_tool: SlackTool):
+    jira = get_jira_client()
+    project = get_gsheet_storage().query_table(
+        OncallInfo,
+        context.channel,
+        [
+            OncallInfo.c.jira_project,
+            OncallInfo.c.jira_issue_type,
+            OncallInfo.c.jira_metadata,
+        ])
+    if not project:
+        raise ValueError("No Jira Project Configured")
+
+    def slack_user_to_jira_mention(user_id: str) -> str:
+        slack_user = slack_tool.get_user_info(user_id)
+        if not slack_user:
+            return user_id
+        jira_user = jira.get_mention_name(get_key(slack_user, "profile.email"))
+        if not jira_user:
+            return get_key(slack_user, "name")
+        return f"[~{jira_user}]"
+
+    project_key = project[OncallInfo.c.jira_project.name]
+    issue_type = project[OncallInfo.c.jira_issue_type.name]
+    ticket_metadata = project[OncallInfo.c.jira_metadata.name]
+    summary = context.command_args[0]
+    first_message = slack_tool.get_thread_first_message(context.thread_ts)["text"]
+    replaced_text = re.sub(
+        r"<@(?P<user_id>.*?)>",
+        lambda x: slack_user_to_jira_mention(x.group("user_id")),
+        first_message
+    )
+
+    description = context.command_args[1] +  "\n\n"
+    description += "ticket created by " + slack_user_to_jira_mention(context.user) + "\n\n"
+    description += "Original Message:\n"
+    description += "{noformat}" + replaced_text + "{noformat}"
+
+    ticket = jira.create_ticket(project_key, summary, description, issue_type, ticket_metadata)
+    slack_tool.responser(f"Ticket created: {ticket}")
 
 
 @MentionedBot.add_command(

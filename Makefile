@@ -6,3 +6,7 @@ docker-image:
 
 run:
 	CONFIG_PATH=.env.yaml .venv/bin/python -m oncall_bot.main
+
+create-secret-k8s:
+	kubectl create secret generic -n $${NAMESPACE} slack-oncallbot-secrets --from-file=config.yaml=$${ENV_YAML} --dry-run=client  --output=yaml > "/tmp/secrets-$$(date +'%Y%m%d').yaml"
+	@echo "/tmp/secrets-$$(date +'%Y%m%d').yaml"
