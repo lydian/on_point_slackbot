@@ -1,3 +1,4 @@
+import json
 from typing import Any, Dict, Optional
 
 import jira
@@ -42,6 +43,8 @@ class Jira:
         issue_type: str,
         kwargs: Optional[Dict[str, Any]] = None
     ) -> str:
+        kwargs = json.loads(kwargs) if kwargs and isinstance(kwargs, str) else {}
+
         issue = self.client.create_issue(
             project={"key": project},
             summary=summary,

@@ -18,6 +18,7 @@ def handle_app_mention_events(body):
 
 
 
+
 if __name__ == "__main__":
     handler = SocketModeHandler(slack_app, load_config().slack_socket_app_token)
     handler.start()

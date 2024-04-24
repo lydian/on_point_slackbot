@@ -42,7 +42,7 @@ class _MentionedBot():
         command_str = command_str.replace('“', '"').replace('”', '"').replace('‘', "'").replace('’', "'")
         command_args = shlex.split(command_str)
         print(f"command args: {command_args}")
-        main_command = command_args.pop(0).lower().strip()
+        main_command = command_args.pop(0).lower().strip() if len(command_args) > 0 else "__DEFAULT__"
         context = Context(
             channel=get_key(body, "event.channel"),
             message_ts=get_key(body, "event.ts"),
@@ -437,6 +437,7 @@ def create_ticket(context: Context, slack_tool: SlackTool):
     ticket_metadata = project[OncallInfo.c.jira_metadata.name]
     summary = context.command_args[0]
     first_message = slack_tool.get_thread_first_message(context.thread_ts)["text"]
+    first_message_url = slack_tool.get_permalink(context.thread_ts)
     replaced_text = re.sub(
         r"<@(?P<user_id>.*?)>",
         lambda x: slack_user_to_jira_mention(x.group("user_id")),
@@ -446,6 +447,7 @@ def create_ticket(context: Context, slack_tool: SlackTool):
     description = context.command_args[1] +  "\n\n"
     description += "ticket created by " + slack_user_to_jira_mention(context.user) + "\n\n"
     description += "Original Message:\n"
+    description += f"[slack|{first_message_url}]\n"
     description += "{noformat}" + replaced_text + "{noformat}"
 
     ticket = jira.create_ticket(project_key, summary, description, issue_type, ticket_metadata)
