@@ -38,9 +38,12 @@ class _MentionedBot():
     @classmethod
     def process_command(self, id, app, body: Dict[Any, Any]):
         command_str = get_key(body, "event.text").replace(f"<@{id}>", "").strip()
-        # replace smart quotes
         command_str = command_str.replace('“', '"').replace('”', '"').replace('‘', "'").replace('’', "'")
-        command_args = shlex.split(command_str)
+        try:
+            command_args = shlex.split(command_str)
+        except ValueError:
+            command_args = command_str.split()
+
         print(f"command args: {command_args}")
         main_command = command_args.pop(0).lower().strip() if len(command_args) > 0 else "__DEFAULT__"
         context = Context(
