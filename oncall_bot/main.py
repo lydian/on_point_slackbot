@@ -16,6 +16,11 @@ def handle_app_mention_events(body):
     self_id = slack_app.client.auth_test()['user_id']
     MentionedBot.process_command(self_id, slack_app, body)
 
+@slack_app.event("message")
+def handle_im(body):
+    self_id = slack_app.client.auth_test()['user_id']
+    print(body)
+    MentionedBot.process_command(self_id, slack_app, body)
 
 
 

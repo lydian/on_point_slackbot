@@ -104,6 +104,14 @@ class SlackTool():
         return get_channel_topic
 
     @property
+    def get_channel_name_from_channel_id(self):
+        def get_channel_name_from_channel_id(channel_id):
+            return "#" + self.app.client.conversations_info(
+                channel=channel_id
+            )["channel"]["name"].lstrip("#")
+        return get_channel_name_from_channel_id
+
+    @property
     def get_channel_bookmark(self):
         def get_channel_bookmark(channel_id):
             return self.app.client.conversations_info(

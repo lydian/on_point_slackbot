@@ -76,6 +76,21 @@ class _MentionedBot():
             if cmd.release
         ])
 
+    @classmethod
+    def update_channel_name(self, slack_tool: SlackTool, channel_id: str) -> None:
+        try:
+            channel_name = get_gsheet_storage().query_table(
+                OncallInfo, channel_id,
+                [OncallInfo.c.channel_name]
+            )[OncallInfo.c.channel_name.name]
+            new_channel_name = slack_tool.get_channel_name_from_channel_id(channel_id)
+            if new_channel_name != channel_name:
+                get_gsheet_storage().upsert_table(
+                    OncallInfo, channel_id, {OncallInfo.c.channel_name.name: new_channel_name}
+                )
+        except Exception as e:
+            print(f"Error: {str(e)}")
+
 
 MentionedBot = _MentionedBot()
 
@@ -96,13 +111,24 @@ def help(context: Context, slack_tool: SlackTool):
     validator=MinMaxValidator(1, 1)
 )
 def set_pagerduty(context: Context, slack_tool: SlackTool):
-    pagerduty_url = context.command_args[0].strip()
+    pagerduty_url = context.command_args[0].strip('<> ')
+    if not PagerDuty(load_config().pagerduty_token).parse_url(pagerduty_url):
+        slack_tool.responser(
+            "Please provide with pagerduty url, either `schedules`, `escalation_policies` or `service-directory`"
+        )
+        return
     get_gsheet_storage().upsert_table(OncallInfo, context.channel, {
         OncallInfo.c.pagerduty_url.name: pagerduty_url
     })
+    MentionedBot.update_channel_name(slack_tool, context.channel)
+    url = get_gsheet_storage().query_table(
+        OncallInfo, context.channel, [OncallInfo.c.pagerduty_url]
+    )[OncallInfo.c.pagerduty_url.name]
+
     slack_tool.responser(
         text=(
-            "Configure done, you can use `set-pagerduty` to update or "
+            f"Configured pagerduty: {url}.\n"
+            "You can use `set-pagerduty` to update or "
             "use `get-pagerduty` to query the current settings"
         ),
         markdown=True,
@@ -149,6 +175,7 @@ def set_sheet_url(context: Context, slack_tool: SlackTool):
         context.channel,
         {OncallInfo.c.tracking_sheet.name: logging_url}
     )
+    MentionedBot.update_channel_name(slack_tool, context.channel)
     slack_tool.responser(
         text=(
             "Configure done, you can use `set-sheet-url` to update or "
@@ -220,7 +247,7 @@ def ping_oncall_person_for_channel(channel, slack_tool: SlackTool):
         topic = slack_tool.get_channel_topic(channel)
         has_pagerduty_url = re.search(r"(?P<url>https://.*pagerduty.com/.*)", topic)
         if has_pagerduty_url:
-            pagerduty_url = [has_pagerduty_url.group("url")]
+            pagerduty_urls = [has_pagerduty_url.group("url")]
 
     # find from bookmarks
     if len(pagerduty_urls) == 0:
@@ -363,6 +390,7 @@ def set_jira_project(context: Context, slack_tool: SlackTool):
             OncallInfo.c.jira_metadata.name: metadata
         }
     )
+    MentionedBot.update_channel_name(slack_tool, channel)
     slack_tool.responser(
         text=(
             "Configure done, you can use `set-jira-project` to update or "
@@ -447,7 +475,8 @@ def create_ticket(context: Context, slack_tool: SlackTool):
         first_message
     )
 
-    description = context.command_args[1] +  "\n\n"
+    description = context.command_args[1] +  "\n\n\n\n"
+    description += "=== Ticket Details ===\n\n"
     description += "ticket created by " + slack_user_to_jira_mention(context.user) + "\n\n"
     description += "Original Message:\n"
     description += f"[slack|{first_message_url}]\n"
