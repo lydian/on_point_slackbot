@@ -37,6 +37,12 @@ class _MentionedBot():
 
     @classmethod
     def process_command(self, id, app, body: Dict[Any, Any]):
+        if (
+            get_key(body, "event.type") != "app_mention" and  f"<@{id}>" not in get_key(body, "event.text")
+        ):
+            print("not a mention_event")
+            return
+
         command_str = get_key(body, "event.text").replace(f"<@{id}>", "").strip()
         command_str = command_str.replace('“', '"').replace('”', '"').replace('‘', "'").replace('’', "'")
         try:
